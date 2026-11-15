@@ -5106,6 +5106,7 @@ window.CROPS = {
     const mustChoose = (S && (S.current || (S.qz && S.qz.open)) && !S.outcome) || /data-act="next-sol"/.test(html);
     if (!mustChoose && !ui.card.querySelector('.icon-btn[data-act], .mx')) ui.card.insertAdjacentHTML('afterbegin', `<button type="button" class="mx" data-act="mx" aria-label="${L('Fechar', 'Close')}">${I.close}</button>`);
     ui.modal.hidden = false;
+    releaseInteract();
     if (eng) { eng.paused = true; eng.unlock(); }
     if (S) S.paused = true;
     ui.card.scrollTop = 0;
@@ -5415,10 +5416,14 @@ window.CROPS = {
   const curStep = () => (M && !M.survival ? M.steps[S.step] : null);
   /* In story missions only the things the checklist needs right now can be used (no stray prompts on unrelated objects).
      Survival is free play, so everything stays available there. */
+  const FREE_KINDS = new Set(['experiment', 'glovebox', 'crew', 'table', 'pantry', 'treadmill', 'bike', 'ared', 'water', 'printer', 'med', 'window', 'toilet', 'sink', 'hygiene', 'galley', 'battery', 'shelter', 'weather']);
   function relevant(it) {
     if (!S || !M || M.survival) return true;
     if (it.kind === 'suit' || it.kind === 'leak' || it.kind === 'lia') return true;
     if (it.kind === 'rover') return true;
+    /* Side activities are always available (lab experiments, talking to the crew, meals, exercise...). They have their own
+       cooldowns and never break the mission order: only the guided steps are tied to the checklist. */
+    if (FREE_KINDS.has(it.kind)) return true;
     const st = curStep(); if (!st) return false;
     const tid = (S.retarget && S.retarget[st.target]) || st.target, tp = world.points[tid];
     if (it.id === tid || it.kind === st.do || (tp && it.pos.distanceToSquared(tp) < 0.01)) return true;
@@ -5889,7 +5894,7 @@ window.CROPS = {
     if (k === 'glovebox' && st && st.do === 'tubes') { S.flags.tubes = true; S.carry = L('10 tubos de amostra', '10 sample tubes'); applyFx({ s: 5 }); toast(L('10 tubos selados e etiquetados.', '10 tubes sealed and labeled.'), 'ok'); stepCheck('tubes'); return; }
     if (k === 'glovebox') {
       if (S.samples > 0) { applyFx({ s: 12 * S.samples }); toast(`${I.flask} ${L(`${S.samples} amostra(s) analisada(s) na glovebox: +${12 * S.samples} ciência.`, `${S.samples} sample(s) analyzed in the glovebox: +${12 * S.samples} science.`)}`, 'ok'); S.samples = 0; S.carry = null; doneTask('analyze'); }
-      else { if (cool('glovebox', 40)) return; applyFx({ s: 6 }); toast(`${I.flask} ${L('Experimento na glovebox concluído: +6 ciência.', 'Glovebox experiment complete: +6 science.')}`, 'ok'); }
+      else { if (!(st && st.do === 'glovebox') && cool('glovebox', 40)) return; applyFx({ s: 6 }); toast(`${I.flask} ${L('Experimento na glovebox concluído: +6 ciência.', 'Glovebox experiment complete: +6 science.')}`, 'ok'); }
       doneTask('exp'); stepCheck('glovebox'); return;
     }
     if (k === 'cupola') {
@@ -5928,8 +5933,9 @@ window.CROPS = {
     const K = KINDS[k];
     if (!K) return;
     if (K.info) { toast(K.info(), 'info', 4500); stepCheck(k); return; }
-    if (K.once && S.flags[K.once]) { toast(L('Já foi feito hoje.', 'Already done today.'), 'info', 2500); return; }
-    if (K.cd && cool(k, K.cd)) return;
+    const isStep = !!(st && st.do === k);   // the current checklist step is never blocked by a free use done earlier
+    if (K.once && S.flags[K.once]) { if (isStep) { stepCheck(k); return; } toast(L('Já foi feito hoje.', 'Already done today.'), 'info', 2500); return; }
+    if (K.cd && !isStep && cool(k, K.cd)) return;
     if (K.needBattery && S.battery < K.needBattery) { toast(L(`Bateria baixa: precisa de ${K.needBattery} célula(s).`, `Battery low: needs ${K.needBattery} cell(s).`), 'alert'); return; }
     if (K.once) S.flags[K.once] = true;
     if (K.flag) S.flags[K.flag] = true;
@@ -6095,12 +6101,18 @@ window.CROPS = {
   }
 
   let holding = false;
+  /* Releasing must ALWAYS work, even while a panel has the game paused. Before, a key-up that arrived with a panel open was
+     dropped, "holding" stayed true and every later press was ignored: the blue button showed, but nothing happened. */
+  function releaseInteract() { holding = false; if (S) S.hold = 0; if (eng) eng.holding = false; }
   function onInteract(down) {
+    if (!down) { releaseInteract(); return; }
     if (!S || S.paused) return;
-    if (down) { if (holding) return; holding = true; const fo = eng.focus; if (fo && !fo.hold) { use(fo); holding = false; } S.hold = 0; }
-    else { holding = false; S.hold = 0; }
+    holding = false;   // a fresh press always starts clean (key repeat is filtered by the engine)
+    holding = true; const fo = eng.focus; if (fo && !fo.hold) { holding = false; use(fo); } S.hold = 0;
     eng.holding = holding;
   }
+  window.addEventListener('blur', releaseInteract);
+  document.addEventListener('visibilitychange', () => { if (document.hidden) releaseInteract(); });
   /* ---------- Guided tutorial (coach marks, about 2 minutes, runs once) ---------- */
   let coach = null;
   function coachSteps() {
@@ -6142,7 +6154,7 @@ window.CROPS = {
       c.el.innerHTML = `<div class="coach-dots">${st.map((_, k) => `<i class="${k < c.i ? 'done' : k === c.i ? 'now' : ''}"></i>`).join('')}</div><p class="coach-t"><b>${L('Treino', 'Training')} ${c.i + 1}/${st.length}</b> · ${s.t}</p><p class="coach-d">${s.d}</p><button class="coach-skip" data-coach-skip>${L('Pular treino', 'Skip training')}</button>`;
     }
   }
-  function holdTick(dt) { if (!holding || !S || S.paused) return; const fo = eng.focus; if (!fo || !fo.hold) { S.hold = 0; return; } S.hold += dt; if (S.hold >= fo.hold) { S.hold = 0; holding = false; use(fo); } }
+  function holdTick(dt) { if (!holding || !S || S.paused) return; const fo = eng.focus; if (!fo || !fo.hold) { S.hold = 0; return; } S.hold += dt; if (S.hold >= fo.hold) { S.hold = 0; holding = false; eng.holding = false; use(fo); } }
 
   /* =======================================================================
      Fim da missão
@@ -6301,6 +6313,7 @@ window.CROPS = {
     root.querySelectorAll('[data-tb]').forEach((b) => {
       b.addEventListener('touchstart', (e) => { e.preventDefault(); set(b, true); }, { passive: false });
       b.addEventListener('touchend', (e) => { e.preventDefault(); set(b, false); }, { passive: false });
+      b.addEventListener('touchcancel', () => set(b, false));   // fullscreen / rotation / system gestures cancel touches
       b.addEventListener('mousedown', () => set(b, true)); b.addEventListener('mouseup', () => set(b, false));
     });
     eng.onJoy = (kind, x, y) => {
