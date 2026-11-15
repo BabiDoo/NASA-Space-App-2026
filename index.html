@@ -69,7 +69,7 @@
 
 *, *::before, *::after { box-sizing: border-box; }
 [hidden] { display: none !important; }
-html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
+html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; overflow-x: clip; max-width: 100%; }
 @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } *, *::before, *::after { animation: none !important; transition: none !important; } }
 body {
   margin: 0;
@@ -82,7 +82,9 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 60; background: rgba(22, 22, 23, .86); }
-html.game-open, html.game-open body { overflow: hidden; }
+html.game-open, html.game-open body { overflow: hidden; background: #05070b; overscroll-behavior: none; }
+/* While playing, the page behind is pinned to the viewport: no sideways scroll or offset can ever leave a light strip at the edge. */
+html.game-open body { position: fixed; inset: 0; width: 100%; height: 100%; }
 img, canvas, svg { max-width: 100%; }
 a { color: inherit; }
 button { font: inherit; color: inherit; }
@@ -335,7 +337,7 @@ main > .final { padding-block: 120px; background: radial-gradient(800px 400px at
    JOGO
    ========================================================================= */
 .game {
-  position: fixed; inset: 0; z-index: 100;
+  position: fixed; inset: 0; z-index: 100; left: 0; top: 0; width: 100%; height: 100%;
   background: radial-gradient(1200px 600px at 20% -10%, #1a1f2b, transparent 60%), var(--g-bg);
   color: var(--g-text);
   overflow: hidden;
@@ -345,6 +347,7 @@ main > .final { padding-block: 120px; background: radial-gradient(800px 400px at
   color-scheme: dark;
 }
 .game svg { display: block; }
+@supports (height: 100dvh) { .game { width: 100dvw; height: 100dvh; } }
 .play, .setup { height: 100%; display: flex; flex-direction: column; }
 .g-top { display: flex; align-items: center; gap: 16px; height: 56px; padding: 0 max(16px, env(safe-area-inset-left, 0px)); border-bottom: 1px solid var(--g-line); flex: none; }
 .g-brand { display: inline-flex; align-items: center; gap: 9px; font-weight: 600; font-size: 15px; }
@@ -839,6 +842,10 @@ kbd { display: inline-grid; place-items: center; min-width: 24px; height: 24px; 
   .roomtag { top: calc(14px + env(safe-area-inset-top, 0px)); font-size: 11px; }
 }
 
+/* touch tablets in landscape: keep the minimap clear of the action buttons (bottom right) */
+@media (pointer: coarse) and (orientation: landscape) and (min-height: 501px) {
+  .minimap { top: calc(214px + env(safe-area-inset-top, 0px)) !important; bottom: auto !important; left: max(12px, env(safe-area-inset-left, 0px)) !important; right: auto !important; width: 150px !important; height: 150px !important; }
+}
 .rotate-gate { display: none; position: fixed; inset: 0; z-index: 2147483000; background: radial-gradient(circle at 50% 40%, #0d1830, #03050a 70%); color: #fff; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 32px; gap: 6px; font-family: Inter, system-ui, sans-serif; }
 .rotate-gate .rg-ic { color: #e8eefb; margin-bottom: 18px; }
 .rotate-gate .rg-phone { transform-origin: 60px 60px; animation: rg-turn 2.4s cubic-bezier(.6, 0, .3, 1) infinite; }
@@ -4951,14 +4958,20 @@ window.CROPS = {
       <p class="rg-t">${L('Gire o celular', 'Rotate your phone')}</p><p class="rg-d">${L('A missão é jogada com a tela na horizontal.', 'The mission is played in landscape.')}</p>`;
     document.body.appendChild(g);
   }
+  const pinViewport = () => { try { window.scrollTo(0, 0); document.documentElement.scrollLeft = 0; document.body.scrollLeft = 0; } catch (e) {} };
+  let savedScrollY = 0;
+  ['resize', 'orientationchange'].forEach((ev) => window.addEventListener(ev, () => { if (document.documentElement.classList.contains('game-open')) { pinViewport(); setTimeout(pinViewport, 250); if (eng && eng.resize) setTimeout(() => eng.resize(), 280); } }));
+  if (window.visualViewport) window.visualViewport.addEventListener('resize', () => { if (document.documentElement.classList.contains('game-open')) { pinViewport(); if (eng && eng.resize) setTimeout(() => eng.resize(), 120); } });
   async function enterLandscape() {
-    document.documentElement.classList.add('game-open'); gateMount();
+    savedScrollY = window.scrollY || 0;
+    document.documentElement.classList.add('game-open'); pinViewport(); gateMount();
     if (!PORTRAIT_TOUCH.matches && !(matchMedia && matchMedia('(pointer: coarse)').matches)) return;
     try { if (!document.fullscreenElement && document.documentElement.requestFullscreen) await document.documentElement.requestFullscreen({ navigationUI: 'hide' }); } catch (e) {}
     try { if (screen.orientation && screen.orientation.lock) await screen.orientation.lock('landscape'); } catch (e) {}
   }
   function leaveLandscape() {
     document.documentElement.classList.remove('game-open');
+    try { window.scrollTo(0, savedScrollY); } catch (e) {}
     try { if (screen.orientation && screen.orientation.unlock) screen.orientation.unlock(); } catch (e) {}
     try { if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen(); } catch (e) {}
   }
@@ -6000,6 +6013,7 @@ window.CROPS = {
     hudT += dt;
     const now = performance.now() / 1000;
     beacons.forEach((b, i) => { b.ring.rotation.y += dt * 2; b.ring.rotation.x = Math.sin(now * 1.5 + i) * 0.4; b.ring.scale.setScalar(1 + Math.sin(now * 4) * 0.12); });
+    { const tn = performance.now(); if (tn - (ui.mapT || 0) > 33) { ui.mapT = tn; drawMap(ui.mini, false); } }
     if (hudT < 0.12) return; hudT = 0;
     const bar = (label, v, icon, color, val, warn) => `<div class="hm${warn ? ' warn' : ''}" style="--c:${color}"><span class="hm-i">${I[icon]}</span><span class="hm-l">${label}</span><span class="hm-v">${val}</span><i><b style="width:${clamp(v, 0, 100)}%"></b></i></div>`;
     const bp = S.battery / S.cap * 100;
@@ -6034,7 +6048,6 @@ window.CROPS = {
       ui.prompt.innerHTML = `${isTouch() ? I.hand : '<kbd>E</kbd>'}<span>${label}${fo.hold ? ` <small>(${L('segure', 'hold')})</small>` : ''}</span>${isStep ? `<em class="pr-step">${L('tarefa da missão', 'mission task')}</em>` : ''}${fo.hold && S.hold > 0 ? `<i class="hold"><b style="width:${clamp(S.hold / fo.hold * 100, 0, 100)}%"></b></i>` : ''}`;
       ui.prompt.hidden = false;
     } else ui.prompt.hidden = true;
-    drawMap(ui.mini, false);
   }
 
   function drawMap(cv, big) {
@@ -6043,7 +6056,9 @@ window.CROPS = {
     const ground = world.kind === 'ground', outside = ground && !S.inside, view = world.map.view;
     const size = ground ? (outside ? 90 : 30) : view.size * 0.5;
     let cx = p.x, cz = p.z, sc = Math.min(W, Hh) / size, bigRot = false;
-    if (big) {
+    /* the minimap shows the whole base (north-up) so the cursor visibly moves and turns; outdoors it follows the player */
+    const fit = big || !ground || S.inside;
+    if (fit) {
       /* the tablet map always fits the whole base (plus you and every active target) on screen, no zoom needed */
       let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
       const add = (x, z) => { x0 = Math.min(x0, x); x1 = Math.max(x1, x); z0 = Math.min(z0, z); z1 = Math.max(z1, z); };
@@ -6054,12 +6069,12 @@ window.CROPS = {
       S.tasks.forEach((t) => { const tp0 = world.points[t.target]; if (tp0) add(tp0.x, tp0.z); });
       cx = (x0 + x1) / 2; cz = (z0 + z1) / 2;
       /* turn the map 90° when the base is long in the other direction than the screen (e.g. the ISS on a phone held upright) */
-      bigRot = (x1 - x0 > z1 - z0) !== (W > Hh) && Math.max(x1 - x0, z1 - z0) > 1.4 * Math.min(x1 - x0, z1 - z0);
+      bigRot = big && (x1 - x0 > z1 - z0) !== (W > Hh) && Math.max(x1 - x0, z1 - z0) > 1.4 * Math.min(x1 - x0, z1 - z0);
       const ew = bigRot ? z1 - z0 : x1 - x0, eh = bigRot ? x1 - x0 : z1 - z0;
-      sc = Math.min(W / (ew * 1.12 + 4), Hh / (eh * 1.12 + 4));
+      sc = big ? Math.min(W / (ew * 1.12 + 4), Hh / (eh * 1.12 + 4)) : Math.min(W, Hh) / (Math.max(ew, eh) * 1.3 + 6);
     }
-    const ang = big ? (bigRot ? -Math.PI / 2 : 0) : eng.yaw, ca = Math.cos(ang), sa = Math.sin(ang);
-    /* world -> canvas. The small map is heading-up (the player always faces up); the big map is north-up. */
+    const ang = bigRot ? -Math.PI / 2 : 0, ca = Math.cos(ang), sa = Math.sin(ang);
+    /* world -> canvas. Both maps are north-up; the cursor moves over the map and rotates with where the player looks. */
     const PT = (x, z) => { const dx = (x - cx) * sc, dz = (z - cz) * sc; return [W / 2 + dx * ca - dz * sa, Hh / 2 + dx * sa + dz * ca]; };
     const poly = (pts) => { g.beginPath(); pts.forEach(([x, z], n) => { const q = PT(x, z); n ? g.lineTo(q[0], q[1]) : g.moveTo(q[0], q[1]); }); g.closePath(); };
     const rect = (x0, z0, x1, z1) => poly([[x0, z0], [x1, z0], [x1, z1], [x0, z1]]);
@@ -6106,8 +6121,8 @@ window.CROPS = {
       g.fillStyle = marks[0].urgent ? '#ff9a9a' : '#9ccfff'; g.font = `700 ${13 * k}px Inter, sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(m + ' m', W / 2, Hh - 29 * k);
     }
     /* player: view cone + arrow */
-    const px = big ? PT(p.x, p.z)[0] : W / 2, py = big ? PT(p.x, p.z)[1] : Hh / 2;
-    g.save(); g.translate(px, py); if (big) g.rotate(ang - eng.yaw);
+    const px = PT(p.x, p.z)[0], py = PT(p.x, p.z)[1];
+    g.save(); g.translate(px, py); g.rotate(ang - eng.yaw);
     const ak = big ? k * 1.1 : k, cr = big ? 40 * k : 70 * k;
     const cone = g.createRadialGradient(0, 0, 0, 0, 0, cr); cone.addColorStop(0, 'rgba(76,195,255,.45)'); cone.addColorStop(1, 'rgba(76,195,255,0)');
     g.fillStyle = cone; g.beginPath(); g.moveTo(0, 0); g.arc(0, 0, cr, -Math.PI / 2 - 0.62, -Math.PI / 2 + 0.62); g.closePath(); g.fill();
