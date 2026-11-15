@@ -10,6 +10,57 @@
 <meta name="description" content="Aerospace Innovation Center: a 3D simulator for all ages. Live real missions on Mars, on the Moon and in a copy of the Space Station, with real NASA data.">
 <meta name="theme-color" content="#000000">
 <script>
+/* In-app browsers (Instagram, Facebook, TikTok…) cannot rotate or go full screen.
+   Android: reopen the page in the phone's real browser automatically (intent:// link).
+   iPhone: the apps block any automatic escape, so a banner explains how to open it in Safari. */
+(function () {
+  var ua = navigator.userAgent || '';
+  var inApp = /Instagram|FBAN|FBAV|FB_IAB|FBIOS|Messenger|Threads|Barcelona|Line\/|TikTok|musical_ly|BytedanceWebview|Snapchat|LinkedInApp|Twitter|Pinterest/i.test(ua);
+  if (!inApp) return;
+  var android = /Android/i.test(ua), ios = /iPhone|iPad|iPod/i.test(ua);
+  document.documentElement.classList.add('inapp');
+  window.__inApp = { android: android, ios: ios };
+  var url = location.href.replace(/[?&]inapp=1/, '');
+  var tried = /[?&]inapp=1/.test(location.search);
+  if (android && !tried) {
+    var fb = url + (url.indexOf('?') < 0 ? '?' : '&') + 'inapp=1';
+    var intent = 'intent://' + url.replace(/^https?:\/\//, '') + '#Intent;scheme=https;S.browser_fallback_url=' + encodeURIComponent(fb) + ';end';
+    try { location.replace(intent); } catch (e) {}
+  }
+  document.addEventListener('DOMContentLoaded', function () {
+    var pt = (document.documentElement.lang || '').indexOf('pt') === 0;
+    var t = pt ? {
+      h: 'Você está no navegador do ' + (/Instagram/i.test(ua) ? 'Instagram' : 'app'),
+      d: ios ? 'Aqui a tela não vira. Para jogar deitado e em tela cheia, toque em <b>•••</b> e escolha <b>Abrir no navegador externo</b>.' : 'Aqui a tela não vira. Para jogar deitado e em tela cheia, abra no Chrome.',
+      o: ios ? 'Abrir no Safari' : 'Abrir no Chrome', c: 'Copiar link', ok: 'Link copiado! Cole no Safari.', x: 'Fechar'
+    } : {
+      h: 'You are in the ' + (/Instagram/i.test(ua) ? 'Instagram' : 'app') + ' browser',
+      d: ios ? 'The screen cannot rotate here. To play in landscape and full screen, tap <b>•••</b> and choose <b>Open in external browser</b>.' : 'The screen cannot rotate here. To play in landscape and full screen, open it in Chrome.',
+      o: ios ? 'Open in Safari' : 'Open in Chrome', c: 'Copy link', ok: 'Link copied! Paste it in Safari.', x: 'Close'
+    };
+    var open = ios ? 'x-safari-' + url : 'intent://' + url.replace(/^https?:\/\//, '') + '#Intent;scheme=https;end';
+    var b = document.createElement('div'); b.className = 'inapp-bar'; b.setAttribute('role', 'note');
+    b.innerHTML = '<div class="ib-t"><b>' + t.h + '</b><span>' + t.d + '</span></div><div class="ib-a"><a class="ib-o" href="' + open + '">' + t.o + '</a><button type="button" class="ib-c">' + t.c + '</button><button type="button" class="ib-x" aria-label="' + t.x + '">×</button></div>';
+    document.body.appendChild(b);
+    b.querySelector('.ib-c').addEventListener('click', function () {
+      var done = function () { b.querySelector('.ib-c').textContent = t.ok; };
+      try { navigator.clipboard.writeText(url).then(done, function () { prompt(t.c, url); }); } catch (e) { prompt(t.c, url); }
+    });
+    b.querySelector('.ib-x').addEventListener('click', function () { b.remove(); });
+  });
+})();
+</script>
+<style>
+.inapp-bar { position: fixed; left: 8px; right: 8px; top: calc(8px + env(safe-area-inset-top, 0px)); z-index: 2147483600; display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 12px 14px; border-radius: 14px; background: rgba(12, 18, 30, .96); color: #f1f5fa; border: 1px solid rgba(76, 195, 255, .5); box-shadow: 0 10px 30px rgba(0, 0, 0, .5); font: 14px/1.4 Inter, system-ui, sans-serif; }
+.inapp-bar .ib-t { flex: 1 1 220px; display: grid; gap: 2px; } .inapp-bar .ib-t span { color: #b9c6d8; font-size: 13px; }
+.inapp-bar .ib-a { display: flex; gap: 8px; align-items: center; }
+.inapp-bar .ib-o, .inapp-bar .ib-c { border: 0; border-radius: 99px; padding: 9px 14px; font: 600 13px/1 Inter, system-ui, sans-serif; text-decoration: none; cursor: pointer; }
+.inapp-bar .ib-o { background: #0071e3; color: #fff; } .inapp-bar .ib-c { background: rgba(255, 255, 255, .12); color: #fff; }
+.inapp-bar .ib-x { background: none; border: 0; color: #9fb0c8; font-size: 22px; line-height: 1; padding: 4px 6px; cursor: pointer; }
+html.inapp.game-open .inapp-bar { display: none; }
+html.inapp .rotate-gate { display: none !important; }
+</style>
+<script>
 /* Language follows the device: Portuguese devices get pt.html, every other language gets the English index.html.
    ?lang=pt or ?lang=en (or the PT/EN link in the menu) overrides it and is remembered on this browser. */
 (function () {
@@ -5035,7 +5086,7 @@ window.CROPS = {
   const PORTRAIT_TOUCH = window.matchMedia ? matchMedia('(orientation: portrait) and (pointer: coarse)') : { matches: false };
   /* The game is only held while the rotate prompt is really on screen, so it can never freeze behind an invisible gate. */
   window.__gateHeld = () => {
-    if (!document.documentElement.classList.contains('game-open') || !PORTRAIT_TOUCH.matches) return false;
+    if (!document.documentElement.classList.contains('game-open') || !PORTRAIT_TOUCH.matches || document.documentElement.classList.contains('inapp')) return false;
     const g = document.querySelector('.rotate-gate');
     return !!g && getComputedStyle(g).display !== 'none';
   };
