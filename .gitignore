@@ -1,0 +1,18 @@
+# Original, unprocessed 3D files (the game only uses the cleaned versions in models/)
+/*.glb
+/*.gltf
+/*.fbx
+*.zip
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+desktop.ini
+*.tmp
+~$*
+.vscode/
+.idea/
+
+# Local tooling
+node_modules/
+*.log
