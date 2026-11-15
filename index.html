@@ -2578,25 +2578,46 @@ window.ASSETS = {
     this.eyePos.set(P.pos.x, P.pos.y + eye + bob, P.pos.z);
     cam.rotation.set(this.pitch, this.yaw, this.mode === 'float' && this.view !== 'tp' ? Math.sin(performance.now() / 2400) * 0.03 : 0, 'YXZ');
     if (this.view !== 'tp') { cam.position.copy(this.eyePos); return; }
-    /* third person: over-the-shoulder camera that slides in when a wall or the ceiling is behind the player */
-    const back = new T.Vector3(0.45, 0.25, 2.8).applyEuler(new T.Euler(this.pitch * 0.6, this.yaw, 0, 'YXZ'));
+    /* third person: over-the-shoulder camera. It tries several spots (right shoulder, left shoulder, higher, closer) and keeps
+       the one with the most free room, so in tight rooms and station modules it never collapses into the player's head. */
+    const FULL = 2.84;
     const from = this.eyePos.clone().add(new T.Vector3(0, this.mode === 'float' ? 0.2 : 0.05, 0));
-    /* find how far back the camera can go without entering a wall (fine steps, camera radius 0.25) */
-    let k = 1;
-    for (let t = 0.05; t <= 1.0001; t += 0.05) {
-      const q = from.clone().addScaledVector(back, t);
-      const blocked = this.mode === 'float' ? (this.floatAllowed && !this.floatAllowed(q))
-        : (this.walls.some((w) => q.x > w.minX - 0.25 && q.x < w.maxX + 0.25 && q.z > w.minZ - 0.25 && q.z < w.maxZ + 0.25) || (this.ceilAt && q.y > this.ceilAt(q.x, q.z) - 0.25));
-      if (blocked) { k = Math.max(0, t - 0.08); break; }
+    const eul = new T.Euler(this.pitch * 0.6, this.yaw, 0, 'YXZ');
+    /* walls already touching the player's head are ignored: only walls that really sit between the player and the camera count */
+    const M2 = 0.2, inflated = (w, q) => q.x > w.minX - M2 && q.x < w.maxX + M2 && q.z > w.minZ - M2 && q.z < w.maxZ + M2;
+    const near = this.mode === 'float' ? [] : this.walls.filter((w) => inflated(w, from));
+    const startOut = this.mode === 'float' && this.floatAllowed && !this.floatAllowed(from);
+    const clear = (v) => {                       // how far (0..1) along v the camera fits without entering a wall
+      let k = 1;
+      for (let t = 0.05; t <= 1.0001; t += 0.05) {
+        const q = from.clone().addScaledVector(v, t);
+        const blocked = this.mode === 'float' ? (!startOut && this.floatAllowed && !this.floatAllowed(q))
+          : (this.walls.some((w) => !near.includes(w) && inflated(w, q)) || (this.ceilAt && q.y > this.ceilAt(q.x, q.z) - 0.2 && from.y <= this.ceilAt(q.x, q.z) - 0.2));
+        if (blocked) { k = Math.max(0, t - 0.06); break; }
+      }
+      return k;
+    };
+    const CANDS = [[0.45, 0.25, 2.8], [-0.45, 0.25, 2.8], [0.0, 0.45, 2.6], [0.4, 0.15, 2.0], [-0.4, 0.15, 2.0], [0.0, 0.5, 1.6], [0.3, 0.1, 1.3], [-0.3, 0.1, 1.3], [0.0, 0.8, 1.4]]
+      .concat(this.mode === 'float' ? [[0.3, 0.9, 1.9], [0.3, -0.7, 1.9], [0.0, 1.2, 1.2], [0.0, -0.9, 1.2], [0.6, 0.0, 1.0], [-0.6, 0.0, 1.0]] : []);
+    let bestV = null, bestLen = -1;
+    for (const c of CANDS) {
+      const v = new T.Vector3(c[0], c[1], c[2]).applyEuler(eul), k = clear(v), len = v.length() * k;
+      if (len > bestLen + 0.05) { bestLen = len; bestV = v.clone().multiplyScalar(k); }
+      if (bestLen >= 2.4) break;               // good enough: keep the preferred shoulder
     }
     /* pull in instantly (never see through a wall), ease back out slowly (no popping in doorways) */
     const now = performance.now(), fdt = Math.min(0.1, ((now - (this._tpT || now)) / 1000) || 0.016); this._tpT = now;
-    this.tpK = this.tpK === undefined ? k : (k < this.tpK ? k : this.tpK + (k - this.tpK) * Math.min(1, fdt * 3));
-    cam.position.copy(from).addScaledVector(back, this.tpK);
+    this.tpTarget = bestV.length();
+    if (!this.tpV) this.tpV = bestV.clone();
+    if (this.tpK === undefined) this.tpV.copy(bestV);
+    else if (bestV.length() < this.tpV.length()) this.tpV.copy(bestV);
+    else this.tpV.lerp(bestV, Math.min(1, fdt * 3));
+    this.tpK = this.tpV.length() / FULL;
+    cam.position.copy(from).add(this.tpV);
     const g = (this.floorAt ? this.floorAt(cam.position.x, cam.position.z) : this.groundAt(cam.position.x, cam.position.z)) + 0.25;
     if (this.mode === 'walk' && cam.position.y < g) cam.position.y = g;
-    /* hide the body only when the camera is really inside it, with hysteresis so it doesn't flicker */
-    this.tpNear = this.tpNear ? this.tpK < 0.3 : this.tpK < 0.2;
+    /* hide the body only when the camera is really inside it (closer than ~0.6 m), with hysteresis so it doesn't flicker */
+    this.tpNear = this.tpNear ? this.tpV.length() < 0.85 : this.tpV.length() < 0.6;
   };
 
   Engine.prototype.addInteract = function (it) { if (window.tr) it.label = tr(it.label); it.pos = it.pos.isVector3 ? it.pos : new T.Vector3(it.pos[0], it.pos[1], it.pos[2]); it.r = it.r || 2.2; this.interactables.push(it); return it; };
