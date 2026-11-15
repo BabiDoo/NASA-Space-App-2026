@@ -1,3 +1,16 @@
+## Aviso sobre a origem e as contribuições
+
+Este repositório contém uma versão aprimorada do **Liastra Mission**, projeto desenvolvido pela equipe **LIASTRA (Campinas)**, da qual fiz parte, e submetido oficialmente ao **NASA Space Apps Challenge 2026**.
+
+Após minha participação no desenvolvimento e na submissão oficial, dei continuidade ao projeto de forma independente, implementando melhorias, adaptações e novas funcionalidades, com foco na experiência do usuário, na evolução técnica e no potencial educacional do simulador.
+
+**Repositório oficial submetido ao hackathon:**
+https://github.com/aniramanin/missao-liastra
+
+Esta versão representa a continuidade do meu trabalho no projeto e **não constitui uma nova submissão ao hackathon**. O desenvolvimento original é fruto da colaboração de toda a equipe LIASTRA, enquanto as evoluções posteriores deste repositório correspondem às minhas contribuições individuais.
+
+---
+
 # Aerospace Innovation Center · Liastra Mission
 
 A 3D space-mission simulator for all ages, built by the **LIASTRA team** (Campinas hub) for the **NASA Space Apps Challenge 2026**.
